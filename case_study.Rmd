@@ -1,0 +1,91 @@
+---
+title: "case_study"
+author: "Shikhar Gupta"
+date: "9/25/2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mice)
+library(VIM)
+library(missForest)
+library(magrittr)
+library(dplyr)
+```
+
+```{r}
+#loading data
+data <- read.csv('~/housing.txt')
+```
+
+```{r}
+#functions
+
+#NA replacement as factor level
+replace_NA <- function(x){
+        y <- addNA(x)
+        levels(y) <- c(levels(x),'Not available')
+        x <- y
+}
+
+#missing value counting
+pMiss <- function(x){sum(is.na(x))/length(x)*100}
+
+```
+
+
+
+```{r}
+
+#missing values across variables for original data
+miss_count_pre <- as.data.frame(apply(data,2,pMiss)>0)
+
+#visualizing distribution of missing values
+miss_col_data_pre <- data[,apply(data,2,pMiss)>0]
+
+aggr_plot <- aggr(miss_col_data_pre, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+
+
+#dataframe with only categorical variables
+data_factor <- data[,sapply(data,class) == 'factor']
+data_continuous <- data[,sapply(data,class) != 'factor']
+
+#dataframe with NA replaced in categorical variables where NA is not a missing value
+data_factor1 <- data_factor %>% select(c(-Electrical,-MasVnrType)) %>% sapply(replace_NA) %>% data.frame()
+data_factor2 <- data_factor %>% select(c(Electrical,MasVnrType))
+
+#combining all the columns to create the original dataframe with NA modified
+data_final <- cbind(data_continuous,data_factor1,data_factor2)
+
+#missing values across variables after treatment
+miss_count_post <- as.data.frame(apply(data_final,2,pMiss))
+
+miss_col_data_post <- data_final[,apply(data_final,2,pMiss)>0]
+
+#visualizing distribution of missing values
+aggr_plot <- aggr(miss_col_data_post, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(data), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+```
+
+
+
+```{r}
+# data_imp <- missForest(data)
+# 
+# 
+# data_imp$OOBerror
+# 
+# 
+# data.err <- mixError(data_imp$ximp, data)
+# 
+# d <- data_imp$ximp
+# 
+# 
+# 
+# impute_arg <- aregImpute(~., data = data, n.impute = 5)
+# help('missForest')
+# help('aregImpute')
+```
+
