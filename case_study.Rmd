@@ -14,6 +14,8 @@ library(VIM)
 library(missForest)
 library(magrittr)
 library(dplyr)
+library(glmnet,quietly = T)
+library(ISLR,quietly = T)
 ```
 
 ```{r}
@@ -67,25 +69,89 @@ miss_col_data_post <- data_final[,apply(data_final,2,pMiss)>0]
 
 #visualizing distribution of missing values
 aggr_plot <- aggr(miss_col_data_post, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(miss_col_data_post), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+
+
+
 ```
 
 
 
 ```{r}
-# data_imp <- missForest(data)
-# 
-# 
-# data_imp$OOBerror
-# 
-# 
-# data.err <- mixError(data_imp$ximp, data)
-# 
-# d <- data_imp$ximp
-# 
-# 
-# 
-# impute_arg <- aregImpute(~., data = data, n.impute = 5)
-# help('missForest')
-# help('aregImpute')
+data_final$MoSold <- as.factor(data_final$MoSold)
+
+#Missing value imputation using miss forest
+data_imp <- missForest(data_final)
+
+#error in the imputation
+data_imp$OOBerror
+
+#final imputed dataframe
+data_imp_final <- data_imp$ximp
+
+#rounding the year column 
+data_imp_final$GarageYrBlt <- round(data_imp_final$GarageYrBlt)
+
+write.csv(data_imp_final,"data_final.csv")
+write.csv(data_imp_final,"data_imp_final.csv")
+
+```
+
+
+
+
+```{r}
+set.seed(1)
+
+x <- model.matrix(SalePrice ~., data = data_imp_final)[,c(-1,-2)]
+y <- data_imp_final$SalePrice
+
+grid.lambda <- 10^seq(10, -2, length = 100)
+
+set.seed(1) #for reproducability
+
+
+cv.out <- cv.glmnet(x, y, alpha = 1,lambda = grid.lambda)
+
+best.lambda <- cv.out$lambda.min
+best.lambda
+plot(cv.out)
+abline(v = log(best.lambda), col = "blue", lwd = 2)
+
+
+final.model <- glmnet(x, y, alpha = 1, lambda = best.lambda)
+Coef.Lasso <- coef(final.model)
+predictor_significant <- names(Coef.Lasso[which(Coef.Lasso[,1]!=0),1])
+predictor_significant <- predictor_significant[2:length(predictor_significant)]
+x_subset <-  x %>% as.data.frame() %>% select(predictor_significant)
+Coef.Lasso
+
+
+data.subset <- cbind(y,x_subset)
+reg <- lm(y~.,data =data.subset)
+
+summary <- summary(reg)
+coeff <- as.data.frame(summary$coefficients)
+z <- coeff[coeff$`Pr(>|t|)`>.05,]
+
+var_remove <- c('GarageYrBlt','GarageArea','MoSold7','MoSold10','MSZoningRM','LotShapeIR2','LotShapeIR3','UtilitiesNoSeWa','NeighborhoodVeenker','Condition1Feedr','Condition1RRAe','Condition2PosA','BldgTypeDuplex','Exterior1stCemntBd','Exterior1stHdBoard','Exterior2ndImStucc','Exterior2ndVinylSd','GarageTypeBasment','GarageTypeBuiltIn','GarageFinishUnf','GarageQualGd','SaleTypeCon','SaleConditionFamily','PoolQCFa','PoolQCGd')
+
+
+data.subset1 <- data.subset[,!(colnames(data.subset) %in% var_remove)]
+data.subset1 <- data.subset1[,-48]
+
+colnames(data.subset1)
+reg1 <- lm(y~.,data =data.subset1)
+
+summary <- summary(reg1)
+coeff <- as.data.frame(summary$coefficients)
+
+boxplot(data.subset$y~data.subset$FoundationPConc)
+plot(data.subset$OpenPorchSF,data.subset$YearBuilt)
+plot(data_final$PoolQC,data_final$SalePrice)
+
+
+
+
+
 ```
 
