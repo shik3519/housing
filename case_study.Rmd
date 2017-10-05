@@ -16,6 +16,10 @@ library(magrittr)
 library(dplyr)
 library(glmnet,quietly = T)
 library(ISLR,quietly = T)
+library(MASS)
+library(olsrr)
+library(fmsb)
+source("vif_func.R")
 ```
 
 ```{r}
@@ -41,7 +45,6 @@ pMiss <- function(x){sum(is.na(x))/length(x)*100}
 
 
 ```{r}
-
 #missing values across variables for original data
 miss_count_pre <- as.data.frame(apply(data,2,pMiss)>0)
 
@@ -56,44 +59,58 @@ data_factor <- data[,sapply(data,class) == 'factor']
 data_continuous <- data[,sapply(data,class) != 'factor']
 
 #dataframe with NA replaced in categorical variables where NA is not a missing value
-data_factor1 <- data_factor %>% select(c(-Electrical,-MasVnrType)) %>% sapply(replace_NA) %>% data.frame()
-data_factor2 <- data_factor %>% select(c(Electrical,MasVnrType))
+data_factor1 <- data_factor %>% dplyr::select(c(-Electrical,-MasVnrType)) %>% sapply(replace_NA) %>% data.frame()
+data_factor2 <- data_factor %>% dplyr::select(c(Electrical,MasVnrType))
 
 #combining all the columns to create the original dataframe with NA modified
 data_final <- cbind(data_continuous,data_factor1,data_factor2)
 
+
+
 #missing values across variables after treatment
 miss_count_post <- as.data.frame(apply(data_final,2,pMiss))
-
 miss_col_data_post <- data_final[,apply(data_final,2,pMiss)>0]
 
 #visualizing distribution of missing values
 aggr_plot <- aggr(miss_col_data_post, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(miss_col_data_post), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
 
+#creating copy
+data.final <- data_final
 
+
+#creating a variable checking if garage exists or not
+for (i in 1:nrow(data.final)){
+        if (is.na(data.final$GarageYrBlt[i])){
+                data.final$GarageExist[i] = 0
+        }else{
+          data.final$GarageExist[i] = 1      
+        }
+}
+
+#removing other Garage related variables and ID column
+garage.var <- c('GarageYrBlt','GarageArea','GarageType','GarageFinish','GarageQual','GarageCond','Id')
+data.final <- data.final[,!(colnames(data.final) %in% garage.var)]
+
+#converting month sold to factors
+data.final$MoSold <- as.factor(data.final$MoSold)
+
+
+#taking log of response
+# data_final$SalePrice <- log(data_final$SalePrice)^2
 
 ```
 
 
 
 ```{r}
-data_final$MoSold <- as.factor(data_final$MoSold)
-
 #Missing value imputation using miss forest
-data_imp <- missForest(data_final)
+data_imp <- missForest(data.final)
 
 #error in the imputation
 data_imp$OOBerror
 
 #final imputed dataframe
 data_imp_final <- data_imp$ximp
-
-#rounding the year column 
-data_imp_final$GarageYrBlt <- round(data_imp_final$GarageYrBlt)
-
-write.csv(data_imp_final,"data_final.csv")
-write.csv(data_imp_final,"data_imp_final.csv")
-
 ```
 
 
@@ -101,57 +118,120 @@ write.csv(data_imp_final,"data_imp_final.csv")
 
 ```{r}
 set.seed(1)
-
-x <- model.matrix(SalePrice ~., data = data_imp_final)[,c(-1,-2)]
+#creating data model
+?model.matrix
+x <- model.matrix(SalePrice ~., data = data_imp_final)[,-1]
 y <- data_imp_final$SalePrice
 
-grid.lambda <- 10^seq(10, -2, length = 100)
+#creating dataframe
+df <- as.data.frame(cbind(y,x))
+
+#preliminary ols
+model1 <- lm(y~.,df)
+summary1 <- summary(model1)
+coeff1 <- as.data.frame(summary1$coefficients)
+
+#dffits
+ols_dffits_plot(model1)
+
+x.df <- df[,2:length(df)] # only x
+
+#############lasso for variable selection#############
 
 set.seed(1) #for reproducability
 
+#creating grid for lamda
+grid.lambda <- 10^seq(10, -2, length = 100)
 
+#cross validation to get best lambda
 cv.out <- cv.glmnet(x, y, alpha = 1,lambda = grid.lambda)
 
 best.lambda <- cv.out$lambda.min
-best.lambda
+
 plot(cv.out)
-abline(v = log(best.lambda), col = "blue", lwd = 2)
 
-
+#actual lasso model with the best lambda
 final.model <- glmnet(x, y, alpha = 1, lambda = best.lambda)
+
 Coef.Lasso <- coef(final.model)
+
 predictor_significant <- names(Coef.Lasso[which(Coef.Lasso[,1]!=0),1])
+#list of significant predictors
 predictor_significant <- predictor_significant[2:length(predictor_significant)]
-x_subset <-  x %>% as.data.frame() %>% select(predictor_significant)
-Coef.Lasso
 
+#new predictor df with reduced variables after lasso
+x.df1 <-  x.df %>% dplyr::select(predictor_significant)
 
-data.subset <- cbind(y,x_subset)
-reg <- lm(y~.,data =data.subset)
-
-summary <- summary(reg)
-coeff <- as.data.frame(summary$coefficients)
-z <- coeff[coeff$`Pr(>|t|)`>.05,]
-
-var_remove <- c('GarageYrBlt','GarageArea','MoSold7','MoSold10','MSZoningRM','LotShapeIR2','LotShapeIR3','UtilitiesNoSeWa','NeighborhoodVeenker','Condition1Feedr','Condition1RRAe','Condition2PosA','BldgTypeDuplex','Exterior1stCemntBd','Exterior1stHdBoard','Exterior2ndImStucc','Exterior2ndVinylSd','GarageTypeBasment','GarageTypeBuiltIn','GarageFinishUnf','GarageQualGd','SaleTypeCon','SaleConditionFamily','PoolQCFa','PoolQCGd')
-
-
-data.subset1 <- data.subset[,!(colnames(data.subset) %in% var_remove)]
-data.subset1 <- data.subset1[,-48]
-
-colnames(data.subset1)
-reg1 <- lm(y~.,data =data.subset1)
-
-summary <- summary(reg1)
-coeff <- as.data.frame(summary$coefficients)
-
-boxplot(data.subset$y~data.subset$FoundationPConc)
-plot(data.subset$OpenPorchSF,data.subset$YearBuilt)
-plot(data_final$PoolQC,data_final$SalePrice)
+#new df with reduced predictors
+df1 <- cbind(y,x.df1)
+```
 
 
 
+```{r}
+
+#log transformation of response based on box cox
+df1$y <- log(df1$y)
+
+#############ols fit1#############
+model2 <- lm(y~.,df1)
+summary2 <- summary(model2)
+coeff2 <- as.data.frame(summary2$coefficients)
+
+#############residual diagnostic#############
+e <- model2$residuals
+std.residuals <- (e - mean(e)) / sd(e)
+
+#test for normality
+ols_rsd_qqplot(model2)
+
+ols_norm_test(model2)
 
 
+#test for constant variance
+plot(df1$y,std.residuals)
+
+#according to residual diagnostics we need y transformation due to failure of KS test
+
+#############box cox for possible transformation#############
+bc <- boxcox(y~.,data = df1)
+bc$x[which(bc$y == max(bc$y))]
+
+#lamda = 0.3
+```
+
+
+```{r}
+#####Outlier treatment######
+#dffits
+dffits <- ols_dffits_plot(model2)
+d.outlier <- dffits$outliers$Observation
+#cooks distance
+cook <- ols_cooksd_chart(model2)
+c.outlier <- cook$outliers$Observation
+
+#removing outlier observations: 84 observations
+df2 <- df1[-c.outlier,]
+```
+
+
+```{r}
+
+#############ols fit2#############
+model3 <- lm(y~.,df2)
+summary3 <- summary(model3)
+coeff3 <- as.data.frame(summary3$coefficients)
+
+#############residual diagnostic#############
+e <- model3$residuals
+std.residuals <- (e - mean(e)) / sd(e)
+
+#test for normality
+ols_rsd_qqplot(model3)
+
+ols_norm_test(model3)
+
+#test for constant variance
+plot(df2$y,std.residuals)
 ```
 
