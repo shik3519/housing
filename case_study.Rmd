@@ -216,9 +216,11 @@ df2 <- df1[-c.outlier,]
 
 
 ```{r}
+var1 <- c('SaleTypeCon','PoolArea','Condition2PosN','PoolQCFa','PoolQCGd')
+df3 <- df2[,!colnames(df2) %in% var1]
 
 #############ols fit2#############
-model3 <- lm(y~.,df2)
+model3 <- lm(y~.,df4)
 summary3 <- summary(model3)
 coeff3 <- as.data.frame(summary3$coefficients)
 
@@ -233,5 +235,20 @@ ols_norm_test(model3)
 
 #test for constant variance
 plot(df2$y,std.residuals)
+```
+
+
+
+```{r}
+step1 <- step(model3, direction = "backward")
+step1_insignificant <- model3$coefficients[!rownames(as.data.frame(model3$coefficients)) %in% rownames(as.data.frame(step1$coefficients))]
+step1_insignificant_df <- as.data.frame(step1_insignificant)
+
+k <- ols_step_backward(model3, prem = 0.05, details = FALSE)
+var_removed <- k$removed
+
+df5 <- df4[,!colnames(df4) %in% var_removed]
+
+
 ```
 
