@@ -291,14 +291,83 @@ durbinWatsonTest(model5)
 ####Morty data prediction######
 mortydata <- df6[7,2:length(df6)]
 morty_predict <- predict(model5,newdata = mortydata,interval = 'prediction',level = 0.95)
-exp(morty_predict[2])
-
+exp(morty_predict)
 ```
 
 
 
 
 
+```{r}
+#####OLS run########
+ols_model <- lm(y~., df1)
+summary(ols_model)
+
+
+####Outlier treatment#####
+dffits <- ols_dffits_plot(ols_model)
+dffits$outliers
+d.outlier <- dffits$outliers$Observation
+
+#removing outlier observations: 84 observations
+df.new <- df1[-d.outlier,]
+
+#predictor transformation
+
+x.skew <- c("MSSubClass","LotArea","BsmtFinSF1","BsmtFinSF2","BsmtUnfSF","TotalBsmtSF","X1stFlrSF","X2ndFlrSF"  ,"LowQualFinSF","GrLivArea","BsmtHalfBath","KitchenAbvGr","WoodDeckSF","OpenPorchSF","EnclosedPorch","X3SsnPorch"   
+,"ScreenPorch","PoolArea","MiscVal")
+tmp1 <- df.new[,x.skew]
+tmp1[tmp1==0] <- 1
+tmp1 <- as.data.frame(sapply(tmp1,log))
+tmp2 <- varremove(df.new,x.skew)
+df.new1 <- cbind(tmp1,tmp2)
+
+#creating test and trainig datasets
+set.seed(1)
+train <- sample(1:nrow(df.new1), nrow(df.new1)*.8)
+test <- (-train)
+df.new1$Yrdiff <- df.new1$YrSold - df.new1$YearBuilt
+df.new1$bsmtarea <- df.new1$TotalBsmtSF+df.new1$X1stFlrSF+df.new1$X2ndFlrSF
+y <- df.new1$y
+x <- df.new1[,2:length(df.new1)]
+
+y.train <- y[train]
+y.test <- y[test]
+x.train <- x[train,]
+x.test <- x[test,]
+
+df.train <- as.data.frame(cbind(y.train,x.train))
+df.test <- as.data.frame(cbind(y.test,x.test))
+
+colnames(df.train)[1] <- "y"
+colnames(df.test)[1] <- "y"
+
+#log transformation
+df.train$y <- log(df.train$y)
+df.test$y <- log(df.test$y)
+
+# ols prediction
+ols_model <- lm(y~., df.train)
+summary(ols_model)
+
+base_predict <-  predict(ols_model,newdata = df.test)
+mspe_ols <- mean((exp(base_predict) - exp(df.test$y))^2)
+#300299981
+mspe_ols_log <- mean((base_predict - df.test$y)^2)
+#0.00958385
+
+
+
+#lamda grid
+grid.lambda <- 10^seq(10, -2, length=100)
+
+
+```
+
+
+
+
+```
 
 
 
