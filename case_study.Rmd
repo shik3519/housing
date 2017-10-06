@@ -18,6 +18,8 @@ library(MASS)
 library(olsrr)
 library(fmsb)
 library(car)
+library(standardize)
+library(leaps)
 knitr::opts_chunk$set(echo = TRUE,cache = T,opts.label = "kill_prefix",fig.align='center',dev = 'pdf',tidy.opts=list(width.cutoff=60),tidy=TRUE)
 knitr::opts_chunk$set(fig.pos = 'H')
 knitr::opts_chunk$set(dev = 'jpeg')
@@ -167,35 +169,28 @@ df2 <- varremove(df1,var_remove)
 
 
 ```{r}
+#############box cox for possible transformation#############
+bc <- boxcox(y~.,data = df2)
+bc$x[which(bc$y == max(bc$y))]
 
-#log transformation of response based on box cox
-df1$y <- log(df1$y)
+df2$y <- log(df2$y)
 
-#############ols fit1#############
-model2 <- lm(y~.,df1)
+#############OLS FIT 2#############
+model2 <- lm(y~.,df2)
 summary2 <- summary(model2)
 coeff2 <- as.data.frame(summary2$coefficients)
 
-#############residual diagnostic#############
-e <- model2$residuals
-std.residuals <- (e - mean(e)) / sd(e)
+######RESIDUAL DIAGNOSTICS#############
 
-#test for normality
-ols_rsd_qqplot(model2)
+###Normality test########
+norm_diagnostic(model2)
 
-ols_norm_test(model2)
+#####Error Autocorrelation test######
+durbinWatsonTest(model2)
 
-
-#test for constant variance
-plot(df1$y,std.residuals)
-
-#according to residual diagnostics we need y transformation due to failure of KS test
-
-#############box cox for possible transformation#############
-bc <- boxcox(y~.,data = df1)
-bc$x[which(bc$y == max(bc$y))]
-
-#lamda = 0.3
+#####Constant variance test#######
+ols_rvsp_plot(model2)
+ncvTest(model2)
 ```
 
 
@@ -204,113 +199,74 @@ bc$x[which(bc$y == max(bc$y))]
 #dffits
 dffits <- ols_dffits_plot(model2)
 d.outlier <- dffits$outliers$Observation
-#cooks distance
-cook <- ols_cooksd_chart(model2)
-c.outlier <- cook$outliers$Observation
 
 #removing outlier observations: 84 observations
-df2 <- df1[-c.outlier,]
+df3 <- df2[-d.outlier,]
 ```
 
 
 ```{r}
-var1 <- c('SaleTypeCon','PoolArea','Condition2PosN','PoolQCFa','PoolQCGd')
-df3 <- df2[,!colnames(df2) %in% var1]
-
-#############ols fit2#############
-model3 <- lm(y~.,df4)
+#############OLS FIT3#############
+model3 <- lm(y~.,df3)
 summary3 <- summary(model3)
 coeff3 <- as.data.frame(summary3$coefficients)
 
-#############residual diagnostic#############
-e <- model3$residuals
-std.residuals <- (e - mean(e)) / sd(e)
+######RESIDUAL DIAGNOSTICS#############
 
-#test for normality
-ols_rsd_qqplot(model3)
+###Normality test########
+norm_diagnostic(model3)
 
-ols_norm_test(model3)
+#####Constant variance test#######
+ols_rvsp_plot(model3)
+ncvTest(model3)
 
-#test for constant variance
-plot(df2$y,std.residuals)
+#2 variables removed after OLS
+df3 <- varremove(df3,c('Condition2PosN','Exterior2ndWd Shng'))
+#rerun the above OLS again after this
 ```
 
 
 
 ```{r}
-#backward subset selection
-step1 <- step(model3, direction = "backward")
-step1_insignificant <- model3$coefficients[!rownames(as.data.frame(model3$coefficients)) %in% rownames(as.data.frame(step1$coefficients))]
-step1_insignificant_df <- as.data.frame(step1_insignificant)
-
+#backward subset selection for variables
 k <- ols_step_backward(model3, prem = 0.05, details = FALSE)
-var_removed <- k$removed
-
-df5 <- df4[,!colnames(df4) %in% var_removed]
-```
+df4 <- varremove(df3,k$removed)
 
 
-```{r}
-standard_fn <- function(col){
-  if(length(unique(col)) == 2){
-    ret <- col}
-  else{
-    ret <- scale(col)
-  }
-  
-  return(ret)
-}
-
-y1 <- df5$y
-
-df6 <- as.data.frame(sapply(dplyr::select(df5, -YearBuilt), standard_fn))
-df6$y <- df5$y
-df6$YearBuilt <- df5$YearBuilt
 
 ```
 
 ```{r}
-#############ols fit2#############
-model4 <- lm(y~.,df8)
+
+#######Scaling variables########
+df5 <- df4 %>% scale() %>% as.data.frame()
+#############OLS FIT3#############
+model4 <- lm(y~.,df5)
 summary4 <- summary(model4)
 coeff4 <- as.data.frame(summary4$coefficients)
 
-#############residual diagnostic#############
-e <- model4$residuals
-std.residuals <- (e - mean(e)) / sd(e)
+######RESIDUAL DIAGNOSTICS#############
 
-#test for normality
-ols_rsd_qqplot(model4)
+###Normality test########
+norm_diagnostic(model4)
 
-ols_norm_test(model4)
-
-#test for constant variance
-plot(df8$y,std.residuals)
-
-summary4
+#####Constant variance test#######
+ols_rvsp_plot(model4)
+ncvTest(model4)
 
 
-nums <- sapply(df6, is.numeric)
 
-df7 <- df6[,nums]
+model5 <- regsubsets(y~., df4, nbest=1, nvmax = 30,method = "exhaustive",force.in = NULL, force.out = NULL)
 
-
-v <- apply(df7, 2, function(x)length(unique(x)))
-names(v[v>2])
-
-
-boxplot(df2$BsmtFinSF1)
-plot(df2$y,df2$BsmtFinSF1)
-
-var2 <- c('LowQualFinSF','YearRemodAdd','Exterior1stWd Sdng','BsmtExposureNot available','Exterior2ndWd Shng','GarageExist')
-
-df8 <- df6[,!colnames(df6) %in% var2]
+summary.out <- summary(model5)
+f <- as.data.frame(summary.out$outmat)
 ```
 
 
 
 
-```
+
+
 
 
 
