@@ -231,15 +231,12 @@ df3 <- varremove(df3,c('Condition2PosN','Exterior2ndWd Shng'))
 #backward subset selection for variables
 k <- ols_step_backward(model3, prem = 0.05, details = FALSE)
 df4 <- varremove(df3,k$removed)
-
-
-
 ```
 
 ```{r}
+df5 <- varremove(df4,c('StreetPave','LotShapeIR3','LowQualFinSF','BsmtFinType1Unf','BsmtFinSF1'))
 
-#######Scaling variables########
-df5 <- df4 %>% scale() %>% as.data.frame()
+
 #############OLS FIT3#############
 model4 <- lm(y~.,df5)
 summary4 <- summary(model4)
@@ -254,12 +251,21 @@ norm_diagnostic(model4)
 ols_rvsp_plot(model4)
 ncvTest(model4)
 
+#######Forward Selection#######
+l <- ols_step_forward(model4)
+plot(l)
 
-
-model5 <- regsubsets(y~., df4, nbest=1, nvmax = 30,method = "exhaustive",force.in = NULL, force.out = NULL)
+#####Best subset selection with max of 15 predictors#######
+model5 <- regsubsets(y~., df5, nbest=1, nvmax = 20,method = "exhaustive",force.in = NULL, force.out = NULL)
 
 summary.out <- summary(model5)
 f <- as.data.frame(summary.out$outmat)
+
+plot(model5, scale = "adjr2", main = "Adjusted R^2")
+
+
+
+
 ```
 
 
