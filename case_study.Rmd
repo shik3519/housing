@@ -260,10 +260,7 @@ model5 <- regsubsets(y~., df5, nbest=1, nvmax = 20,method = "exhaustive",force.i
 
 summary.out <- summary(model5)
 f <- as.data.frame(summary.out$outmat)
-
 plot(model5, scale = "adjr2", main = "Adjusted R^2")
-
-
 
 
 ```
