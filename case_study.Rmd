@@ -6,6 +6,7 @@ output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
+options(scripen = 999)
 knitr::opts_chunk$set(echo = TRUE)
 library(mice)
 library(VIM)
@@ -20,7 +21,7 @@ library(fmsb)
 library(car)
 library(standardize)
 library(leaps)
-knitr::opts_chunk$set(echo = TRUE,cache = T,opts.label = "kill_prefix",fig.align='center',dev = 'pdf',tidy.opts=list(width.cutoff=60),tidy=TRUE)
+knitr::opts_chunk$set(echo = TRUE,eval = F,cache = T,opts.label = "kill_prefix",fig.align='center',dev = 'pdf',tidy.opts=list(width.cutoff=60),tidy=TRUE)
 knitr::opts_chunk$set(fig.pos = 'H')
 knitr::opts_chunk$set(dev = 'jpeg')
 source("vif_func.R")
@@ -102,6 +103,7 @@ data_imp$OOBerror
 
 #final imputed dataframe
 data <- data_imp$ximp
+
 ```
 
 
@@ -198,6 +200,7 @@ ncvTest(model2)
 #####Outlier treatment######
 #dffits
 dffits <- ols_dffits_plot(model2)
+dffits$outliers
 d.outlier <- dffits$outliers$Observation
 
 #removing outlier observations: 84 observations
@@ -237,7 +240,7 @@ df4 <- varremove(df3,k$removed)
 df5 <- varremove(df4,c('StreetPave','LotShapeIR3','LowQualFinSF','BsmtFinType1Unf','BsmtFinSF1'))
 
 
-#############OLS FIT3#############
+#############OLS FIT4#############
 model4 <- lm(y~.,df5)
 summary4 <- summary(model4)
 coeff4 <- as.data.frame(summary4$coefficients)
@@ -260,10 +263,38 @@ model5 <- regsubsets(y~., df5, nbest=1, nvmax = 20,method = "exhaustive",force.i
 
 summary.out <- summary(model5)
 f <- as.data.frame(summary.out$outmat)
-plot(model5, scale = "adjr2", main = "Adjusted R^2")
 
+
+df6 <- df5 %>% dplyr::select('y','BldgTypeDuplex','BsmtFullBath','BsmtQualEx','Condition1Norm','BsmtExposureGd','FunctionalTyp','Exterior1stBrkFace','NeighborhoodStoneBr','NeighborhoodNridgHt','NeighborhoodSomerst','MSZoningRM','BldgTypeTwnhs','LotArea','NeighborhoodCrawfor','GarageCars','TotalBsmtSF','OverallCond','OverallQual','YearBuilt','GrLivArea','FunctionalSev','ScreenPorch','SaleTypeNew','KitchenQualTA','NeighborhoodEdwards','BldgTypeTwnhsE','FoundationPConc','Fireplaces','KitchenQualGd','YearRemodAdd')
+
+
+#############OLS FIT5#############
+model5 <- lm(y~.,df6)
+summary5 <- summary(model5)
+coeff5 <- as.data.frame(summary5$coefficients)
+coeff5_interval <- confint(model5)
+######RESIDUAL DIAGNOSTICS#############
+
+###Normality test########
+norm_diagnostic(model5)
+
+#####Constant variance test#######
+ols_rvsp_plot(model5)
+ncvTest(model5)
+
+#####Error correlation test#######
+durbinWatsonTest(model5)
+```
+
+
+```{r}
+####Morty data prediction######
+mortydata <- df6[7,2:length(df6)]
+morty_predict <- predict(model5,newdata = mortydata,interval = 'prediction',level = 0.95)
+exp(morty_predict[2])
 
 ```
+
 
 
 
