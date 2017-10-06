@@ -289,18 +289,26 @@ durbinWatsonTest(model5)
 
 ```{r}
 ####Morty data prediction######
-mortydata <- df6[7,2:length(df6)]
+mortydata <- df6[5,2:length(df6)]
 morty_predict <- predict(model5,newdata = mortydata,interval = 'prediction',level = 0.95)
 exp(morty_predict)
 ```
 
-
-
-
-
 ```{r}
+#predictor transformation
+#creating new variables
+df2$yrdiff <- df1$YrSold-df1$YearBuilt
+df2$bsmtarea <- df1$TotalBsmtSF+df1$X1stFlrSF+df1$X2ndFlrSF
+df.new1 <- df2
+
+#keeping the list of variables shortlisted in interpretaion: 46 predictors
+v <- colnames(df4)
+v <- c(v,"bsmtarea","yrdiff")
+df.new1 <- df.new1[,(colnames(df.new1) %in% v)]
+
+
 #####OLS run########
-ols_model <- lm(y~., df1)
+ols_model <- lm(y~., df.new1)
 summary(ols_model)
 
 
@@ -309,25 +317,13 @@ dffits <- ols_dffits_plot(ols_model)
 dffits$outliers
 d.outlier <- dffits$outliers$Observation
 
-#removing outlier observations: 84 observations
-df.new <- df1[-d.outlier,]
-
-#predictor transformation
-
-x.skew <- c("MSSubClass","LotArea","BsmtFinSF1","BsmtFinSF2","BsmtUnfSF","TotalBsmtSF","X1stFlrSF","X2ndFlrSF"  ,"LowQualFinSF","GrLivArea","BsmtHalfBath","KitchenAbvGr","WoodDeckSF","OpenPorchSF","EnclosedPorch","X3SsnPorch"   
-,"ScreenPorch","PoolArea","MiscVal")
-tmp1 <- df.new[,x.skew]
-tmp1[tmp1==0] <- 1
-tmp1 <- as.data.frame(sapply(tmp1,log))
-tmp2 <- varremove(df.new,x.skew)
-df.new1 <- cbind(tmp1,tmp2)
+#removing outlier observations: 118 observations
+df.new1 <- df.new1[-d.outlier,]
 
 #creating test and trainig datasets
-set.seed(1)
-train <- sample(1:nrow(df.new1), nrow(df.new1)*.8)
+set.seed(2)
+train <- sample(1:nrow(df.new1), nrow(df.new1)*0.8)
 test <- (-train)
-df.new1$Yrdiff <- df.new1$YrSold - df.new1$YearBuilt
-df.new1$bsmtarea <- df.new1$TotalBsmtSF+df.new1$X1stFlrSF+df.new1$X2ndFlrSF
 y <- df.new1$y
 x <- df.new1[,2:length(df.new1)]
 
@@ -342,9 +338,14 @@ df.test <- as.data.frame(cbind(y.test,x.test))
 colnames(df.train)[1] <- "y"
 colnames(df.test)[1] <- "y"
 
-#log transformation
-df.train$y <- log(df.train$y)
-df.test$y <- log(df.test$y)
+
+
+```
+
+
+
+
+```{r}
 
 # ols prediction
 ols_model <- lm(y~., df.train)
@@ -352,26 +353,94 @@ summary(ols_model)
 
 base_predict <-  predict(ols_model,newdata = df.test)
 mspe_ols <- mean((exp(base_predict) - exp(df.test$y))^2)
-#300299981
-mspe_ols_log <- mean((base_predict - df.test$y)^2)
-#0.00958385
+#219456436
+
+```
 
 
 
-#lamda grid
+```{r}
 grid.lambda <- 10^seq(10, -2, length=100)
 
 
+#lamda selection
+cv.lasso <- cv.glmnet(as.matrix(x.train), as.matrix(y.train), alpha=1,lambda = grid.lambda)
+best_lambda_lasso <- cv.lasso$lambda.min
+plot(cv.lasso)
+abline(v = log(best_lambda_lasso), col='blue')
+
+#lasso model
+lasso.model.train <- glmnet(as.matrix(x.train), as.matrix(y.train), alpha = 1, lambda = grid.lambda)
+plot(lasso.model.train)
+
+lasso_pred <- predict(lasso.model.train, s=best_lambda_lasso, newx = as.matrix(x.test))
+mspe_lasso <- mean((exp(lasso_pred) - exp(y.test))^2)
+mspe_lasso
+#321593710
+
+final_model_lasso <- glmnet(as.matrix(x), as.matrix(y), alpha = 1, lambda = best_lambda_lasso)
+coef_lasso <- coef(final_model_lasso)[1:length(coef(final_model_lasso)),]
+coef_lasso
+
+
+```
+
+
+```{r}
+grid.lambda <- 10^seq(10, -2, length=100)
+
+
+#lamda selection
+cv.ridge <- cv.glmnet(as.matrix(x.train), as.matrix(y.train), alpha=0,lambda = grid.lambda)
+best_lambda_ridge <- cv.ridge$lambda.min
+plot(cv.ridge)
+abline(v = log(best_lambda_ridge), col='blue')
+
+#ridge model
+ridge.model.train <- glmnet(as.matrix(x.train), as.matrix(y.train), alpha = 0, lambda = grid.lambda)
+plot(ridge.model.train)
+
+ridge_pred <- predict(ridge.model.train, s=best_lambda_ridge, newx = as.matrix(x.test))
+mspe_ridge <- mean((exp(ridge_pred) - exp(y.test))^2)
+mspe_ridge
+#218523464
+
+final_model_ridge <- glmnet(as.matrix(x), as.matrix(y), alpha = 0, lambda = best_lambda_ridge)
+coef_ridge <- coef(final_model_ridge)[1:length(coef(final_model_ridge)),]
+coef_ridge
+```
+
+```{r}
+grid.lambda <- 10^seq(10, -2, length=100)
+
+
+#lamda selection
+cv.en <- cv.glmnet(as.matrix(x.train), as.matrix(y.train), alpha=0.01,lambda = grid.lambda)
+best_lambda_en <- cv.en$lambda.min
+plot(cv.en)
+abline(v = log(best_lambda_en), col='blue')
+
+#en model
+en.model.train <- glmnet(as.matrix(x.train), as.matrix(y.train), alpha = 0.01, lambda = grid.lambda)
+plot(en.model.train)
+
+en_pred <- predict(en.model.train, s=best_lambda_en, newx = as.matrix(x.test))
+mspe_en <- mean((exp(en_pred) - exp(y.test))^2)
+mspe_en
+#218278873
+
+final_model_en <- glmnet(as.matrix(x), as.matrix(y), alpha = 0.01, lambda = best_lambda_en)
+coef_en <- coef(final_model_en)[1:length(coef(final_model_en)),]
+coef_en
 ```
 
 
 
-
+```{r}
+Coefficients <- data.frame(Ridge = coef_ridge, Lasso = coef_lasso, Elastic.Net = coef_en)
+MSPE <- data.frame(Ridge = mspe_ridge, Lasso = mspe_lasso, Elastic.Net = mspe_en,ols = mspe_ols)
+Coefficients
+MSPE
 ```
-
-
-
-
-
 
 
